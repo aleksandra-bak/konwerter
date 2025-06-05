@@ -1,12 +1,16 @@
-
 from flask import Flask, request, render_template, send_file, abort
 import os
 import geopandas as gpd
 import zipfile
 import json
 import time
+import shutil
+from datetime import datetime
 
 app = Flask(__name__)
+
+# LIMIT rozmiaru pliku: 20 MB
+app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 20 MB
 
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "output"
@@ -14,16 +18,42 @@ OUTPUT_FOLDER = "output"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
+def clean_old_files(folder, max_age_seconds=3600):
+    now = time.time()
+    for filename in os.listdir(folder):
+        filepath = os.path.join(folder, filename)
+        try:
+            if os.path.isfile(filepath) and os.path.getmtime(filepath) < now - max_age_seconds:
+                os.remove(filepath)
+            elif os.path.isdir(filepath) and os.path.getmtime(filepath) < now - max_age_seconds:
+                shutil.rmtree(filepath)
+        except Exception as e:
+            print(f"Błąd przy usuwaniu {filepath}: {e}")
+
 @app.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
 
 @app.route("/process", methods=["POST"])
 def process():
+    # Czyść stare pliki
+    clean_old_files(UPLOAD_FOLDER)
+    clean_old_files(OUTPUT_FOLDER)
+
+    # WALIDACJA pliku .gml
     gml_file = request.files["gml_file"]
+    if not gml_file.filename.lower().endswith(".gml"):
+        abort(400, description="Dozwolone są tylko pliki z rozszerzeniem .gml")
+
+    # LOGOWANIE operacji
+    client_ip = request.remote_addr
+    zip_name = request.form["zip_name"].strip()
+    log_entry = f"[{datetime.now()}] IP: {client_ip}, Plik: {gml_file.filename}, ZIP: {zip_name}.zip\n"
+    with open("upload_log.txt", "a", encoding="utf-8") as log_file:
+        log_file.write(log_entry)
+
     client_name = request.form["client_name"]
     farm_name = request.form["farm_name"]
-    zip_name = request.form["zip_name"].strip()
 
     gml_path = os.path.join(UPLOAD_FOLDER, gml_file.filename)
     shp_dir = os.path.join(OUTPUT_FOLDER, zip_name)
@@ -64,7 +94,7 @@ def process():
     with zipfile.ZipFile(zip_path, "w") as zipf:
         for fname in os.listdir(shp_dir):
             full_path = os.path.join(shp_dir, fname)
-            zipf.write(full_path, arcname=os.path.join(zip_name, fname))
+            zipf.write(full_path, arcname=fname)
 
     if not os.path.exists(zip_path):
         abort(500, description="Nie udało się utworzyć pliku ZIP.")
