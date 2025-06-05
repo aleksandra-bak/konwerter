@@ -12,8 +12,8 @@ app = Flask(__name__)
 # LIMIT rozmiaru pliku: 20 MB
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 20 MB
 
-UPLOAD_FOLDER = "uploads"
-OUTPUT_FOLDER = "output"
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
+OUTPUT_FOLDER = os.path.join(os.path.dirname(__file__), "output")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
